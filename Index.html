@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Viseur d'éclipse — Rioseco de Tapia</title>
+<style>
+  :root{
+    --void:#05070c;
+    --panel:rgba(8,12,20,.78);
+    --line:rgba(150,180,225,.18);
+    --corona:#eff4ff;
+    --dim:#7d8ca6;
+    --amber:#ffae2b;
+    --violet:#a77bff;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--void);color:var(--corona);
+    font-family:var(--sans);overscroll-behavior:none}
+  body{overflow:hidden}
+  #stage{position:fixed;inset:0;overflow:hidden;background:
+    radial-gradient(120% 80% at 50% 110%, #101a2c 0%, #05070c 70%)}
+  video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none}
+  video.on{display:block}
+  canvas{position:absolute;inset:0;width:100%;height:100%}
+
+  .lbl{font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);
+    font-weight:600}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  /* ---- barre haute ---- */
+  #hud{position:absolute;top:0;left:0;right:0;padding:calc(env(safe-area-inset-top) + 10px) 12px 10px;
+    background:linear-gradient(#05070ce0,#05070c00);pointer-events:none;display:flex;
+    align-items:flex-start;justify-content:space-between;gap:10px}
+  #clock{display:flex;flex-direction:column;gap:2px}
+  #cd{font-family:var(--mono);font-size:30px;line-height:1;letter-spacing:-.02em;font-weight:600}
+  #cd.near{color:var(--amber)}
+  #cd.now{color:var(--violet)}
+  #readout{text-align:right;display:flex;flex-direction:column;gap:3px}
+  #readout .row{font-family:var(--mono);font-size:13px;line-height:1.15}
+  #readout .row span{color:var(--dim);font-size:9.5px;letter-spacing:.12em}
+
+  /* ---- indicateur de guidage ---- */
+  #guide{position:absolute;left:50%;transform:translateX(-50%);
+    bottom:calc(env(safe-area-inset-bottom) + 74px);
+    background:var(--panel);border:1px solid var(--line);border-radius:3px;
+    padding:7px 12px;font-family:var(--mono);font-size:12px;letter-spacing:.02em;
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);white-space:nowrap;
+    transition:opacity .2s;pointer-events:none}
+  #guide b{color:var(--amber);font-weight:600}
+
+  /* ---- pied ---- */
+  #foot{position:absolute;left:0;right:0;bottom:0;padding:10px 12px calc(env(safe-area-inset-bottom) + 12px);
+    display:flex;gap:8px;align-items:center;justify-content:space-between;
+    background:linear-gradient(#05070c00,#05070ce6)}
+  button{font-family:var(--sans);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    font-weight:600;color:var(--corona);background:rgba(20,28,44,.85);border:1px solid var(--line);
+    border-radius:3px;padding:11px 14px;cursor:pointer}
+  button:active{background:rgba(40,54,80,.9)}
+  button:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+
+  /* ---- panneau réglages ---- */
+  #panel{position:absolute;left:0;right:0;bottom:0;max-height:82%;overflow-y:auto;
+    background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border-top:1px solid var(--line);padding:16px 14px calc(env(safe-area-inset-bottom) + 16px);
+    transform:translateY(101%);transition:transform .28s cubic-bezier(.3,.8,.3,1)}
+  #panel.open{transform:translateY(0)}
+  .sect{margin-bottom:16px}
+  .sect > .lbl{display:block;margin-bottom:7px;padding-bottom:5px;border-bottom:1px solid var(--line)}
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px}
+  td{padding:4px 0;vertical-align:baseline}
+  td:first-child{color:var(--dim);font-family:var(--sans);font-size:11px;letter-spacing:.06em;
+    text-transform:uppercase}
+  td:last-child{text-align:right}
+  tr.key td:last-child{color:var(--violet);font-weight:600}
+  .ctrl{display:flex;align-items:center;gap:10px;margin:9px 0}
+  .ctrl .lbl{width:96px;flex:none}
+  .ctrl input[type=range]{flex:1;accent-color:var(--amber);background:transparent}
+  .ctrl output{font-family:var(--mono);font-size:12px;width:52px;text-align:right}
+  .note{font-size:11.5px;line-height:1.5;color:var(--dim)}
+  .note b{color:var(--amber);font-weight:600}
+
+  /* ---- écran d'accueil ---- */
+  #start{position:absolute;inset:0;background:linear-gradient(#05070c,#0a1120 60%,#161022);
+    display:flex;flex-direction:column;justify-content:center;gap:18px;
+    padding:32px 22px calc(env(safe-area-inset-bottom) + 24px);z-index:20;overflow-y:auto}
+  #start h1{margin:0;font-size:26px;line-height:1.08;font-weight:700;letter-spacing:-.02em}
+  #start h1 em{font-style:normal;color:var(--violet)}
+  .kicker{font-size:10px;letter-spacing:.26em;text-transform:uppercase;color:var(--amber);
+    font-weight:700;margin-bottom:12px}
+  #start p{margin:0;font-size:14px;line-height:1.55;color:#c3cee0}
+  .facts{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);
+    border:1px solid var(--line);margin:2px 0}
+  .facts div{background:#080d16;padding:10px 11px}
+  .facts .v{font-family:var(--mono);font-size:19px;margin-top:3px}
+  .warn{border-left:2px solid var(--amber);padding-left:11px;font-size:12px;line-height:1.5;color:#b9c4d6}
+  #start button{width:100%;padding:15px;font-size:12px}
+  #go{background:var(--amber);color:#120b00;border-color:var(--amber)}
+  #skip{background:transparent;border-color:transparent;color:var(--dim)}
+  #err{color:var(--amber);font-size:12px;line-height:1.45;display:none}
+  @media (prefers-reduced-motion:reduce){#panel{transition:none}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="cam" playsinline muted autoplay></video>
+  <canvas id="sky"></canvas>
+
+  <div id="hud">
+    <div id="clock">
+      <div class="lbl">Totalité dans</div>
+      <div id="cd" class="num">—</div>
+      <div class="lbl" id="phase">phase partielle</div>
+    </div>
+    <div id="readout">
+      <div class="row"><span>SOLEIL AZ</span> <b id="rAz">—</b></div>
+      <div class="row"><span>SOLEIL HAUT</span> <b id="rAlt">—</b></div>
+      <div class="row"><span>VISÉE</span> <b id="rAim">—</b></div>
+    </div>
+  </div>
+
+  <div id="guide">Cherche le Soleil…</div>
+
+  <div id="foot">
+    <button id="btnPanel">Données &amp; réglages</button>
+    <button id="btnCam">Caméra</button>
+  </div>
+
+  <div id="panel">
+    <div class="sect">
+      <span class="lbl">Circonstances locales — 12 août 2026 (CEST)</span>
+      <table>
+        <tr><td>Début partielle</td><td id="tC1">—</td></tr>
+        <tr class="key"><td>Début totalité</td><td id="tC2">—</td></tr>
+        <tr><td>Maximum</td><td id="tMax">—</td></tr>
+        <tr class="key"><td>Fin totalité</td><td id="tC3">—</td></tr>
+        <tr><td>Durée</td><td id="tDur">—</td></tr>
+        <tr><td>Coucher du Soleil</td><td id="tSet">—</td></tr>
+      </table>
+    </div>
+    <div class="sect">
+      <span class="lbl">Soleil à l'instant de la totalité</span>
+      <table>
+        <tr><td>Azimut</td><td id="pAz">—</td></tr>
+        <tr><td>Hauteur</td><td id="pAlt">—</td></tr>
+        <tr><td>Position</td><td id="pPos">—</td></tr>
+      </table>
+    </div>
+    <div class="sect">
+      <span class="lbl">Calibration</span>
+      <div class="ctrl"><span class="lbl">Champ caméra</span>
+        <input id="sFov" type="range" min="35" max="90" step="1" value="66"><output id="oFov">66°</output></div>
+      <div class="ctrl"><span class="lbl">Décalage cap</span>
+        <input id="sOff" type="range" min="-25" max="25" step="0.5" value="0"><output id="oOff">0°</output></div>
+      <p class="note">Si le repère est décalé du Soleil réel, ajustez le décalage de cap jusqu'à ce qu'ils coïncident : la calibration reste valable pour la totalité. Éloignez le téléphone de tout métal ou aimant.</p>
+    </div>
+    <div class="sect">
+      <span class="lbl">Position utilisée</span>
+      <table>
+        <tr><td>Latitude</td><td id="pLat">—</td></tr>
+        <tr><td>Longitude</td><td id="pLon">—</td></tr>
+        <tr><td>Source</td><td id="pSrc">—</td></tr>
+      </table>
+      <div class="ctrl" style="margin-top:10px"><button id="btnGeo" style="width:100%">Utiliser ma position GPS</button></div>
+    </div>
+    <div class="sect">
+      <p class="note"><b>Sécurité.</b> Lunettes ISO 12312-2 obligatoires pendant toute la phase partielle. Ne les retirez que pendant les ~1 min 45 s de totalité. Évitez de laisser l'objectif pointé longuement vers le Soleil non éclipsé.</p>
+    </div>
+    <button id="btnClose" style="width:100%">Fermer</button>
+  </div>
+
+  <div id="start">
+    <div>
+      <div class="kicker">12 août 2026 · Rioseco de Tapia</div>
+      <h1>Le Soleil se cache<br><em>à 10° au-dessus de l'horizon</em></h1>
+    </div>
+    <p>Cet outil superpose la position calculée du Soleil sur l'image de votre caméra. Balayez l'horizon ouest‑nord‑ouest : le repère ambre marque le Soleil, la courbe indique sa descente jusqu'au coucher, le losange violet l'instant de la totalité.</p>
+    <div class="facts">
+      <div><div class="lbl">Totalité</div><div class="v" id="fT">20:28</div></div>
+      <div><div class="lbl">Durée</div><div class="v" id="fD">1 min 45 s</div></div>
+      <div><div class="lbl">Azimut</div><div class="v" id="fA">—</div></div>
+      <div><div class="lbl">Hauteur</div><div class="v" id="fH">—</div></div>
+    </div>
+    <div class="warn">Le Soleil sera très bas : vérifiez dès maintenant qu'aucune colline ni arbre ne masque cette direction. Le repère traverse aussi la ligne d'horizon affichée à l'écran.</div>
+    <div id="err"></div>
+    <button id="go">Activer caméra et boussole</button>
+    <button id="skip">Continuer sans caméra</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+const RAD=Math.PI/180, DEG=180/Math.PI;
+const $=id=>document.getElementById(id);
+
+/* ============ position par défaut : Rioseco de Tapia (León) ============ */
+let LAT=42.7647, LON=-5.8836, SRC="Rioseco de Tapia (par défaut)";
+
+/* ============ circonstances (heure locale CEST = UTC+2) ============
+   Estimation pour Rioseco de Tapia d'après les données publiées pour León.
+   Les positions du Soleil ci-dessous sont, elles, calculées à la volée. */
+const EV={
+  c1:new Date("2026-08-12T19:32:20+02:00"),
+  c2:new Date("2026-08-12T20:28:12+02:00"),
+  mx:new Date("2026-08-12T20:29:05+02:00"),
+  c3:new Date("2026-08-12T20:29:58+02:00"),
+  c4:new Date("2026-08-12T21:22:00+02:00")
+};
+
+/* ============ position du Soleil (algorithme NOAA) ============ */
+function julian(d){return d.getTime()/86400000+2440587.5;}
+function refraction(h){
+  if(h<-1)return 0;
+  return (1.02/Math.tan((h+10.3/(h+5.11))*RAD))/60;
+}
+function sunPos(date,lat,lon){
+  const JD=julian(date), T=(JD-2451545)/36525;
+  let L0=(280.46646+T*(36000.76983+0.0003032*T))%360; if(L0<0)L0+=360;
+  const M=(357.52911+T*(35999.05029-0.0001537*T))*RAD;
+  const C=Math.sin(M)*(1.914602-T*(0.004817+0.000014*T))
+         +Math.sin(2*M)*(0.019993-0.000101*T)+Math.sin(3*M)*0.000289;
+  const om=(125.04-1934.136*T)*RAD;
+  const lam=(L0+C-0.00569-0.00478*Math.sin(om))*RAD;
+  const eps=(23+(26+((21.448-T*(46.815+T*(0.00059-T*0.001813))))/60)/60+0.00256*Math.cos(om))*RAD;
+  const ra=Math.atan2(Math.cos(eps)*Math.sin(lam),Math.cos(lam))*DEG;
+  const dec=Math.asin(Math.sin(eps)*Math.sin(lam));
+  let gmst=(280.46061837+360.98564736629*(JD-2451545)+0.000387933*T*T-T*T*T/38710000)%360;
+  if(gmst<0)gmst+=360;
+  const H=(((gmst+lon-ra)+180)%360+360)%360-180, Hr=H*RAD, la=lat*RAD;
+  const alt=Math.asin(Math.sin(la)*Math.sin(dec)+Math.cos(la)*Math.cos(dec)*Math.cos(Hr))*DEG;
+  let az=Math.atan2(-Math.sin(Hr),Math.cos(la)*Math.tan(dec)-Math.sin(la)*Math.cos(Hr))*DEG;
+  return {az:(az+360)%360, alt:alt+refraction(alt), geo:alt};
+}
+function sunsetAfter(from,lat,lon){
+  let t=from.getTime();
+  for(let i=0;i<300;i++){
+    const a=sunPos(new Date(t),lat,lon).geo, b=sunPos(new Date(t+60000),lat,lon).geo;
+    if(a>-0.833 && b<=-0.833){
+      for(let j=0;j<60;j++){ if(sunPos(new Date(t+j*1000),lat,lon).geo<=-0.833) return new Date(t+j*1000); }
+    }
+    t+=60000;
+  }
+  return null;
+}
+
+/* ============ orientation de l'appareil ============ */
+let alpha=null,beta=0,gamma=0,hasAbs=false,headOffset=0,fovH=66;
+function screenAngle(){
+  if(screen.orientation && typeof screen.orientation.angle==="number") return screen.orientation.angle;
+  return window.orientation||0;
+}
+function onOrient(e,absolute){
+  if(e.alpha===null&&e.webkitCompassHeading===undefined)return;
+  if(typeof e.webkitCompassHeading==="number"&&!isNaN(e.webkitCompassHeading)){
+    alpha=360-e.webkitCompassHeading; hasAbs=true;
+  }else if(absolute||e.absolute){ alpha=e.alpha; hasAbs=true; }
+  else if(!hasAbs){ alpha=e.alpha; }
+  else return;
+  beta=e.beta||0; gamma=e.gamma||0;
+}
+function basis(){
+  if(alpha===null)return null;
+  const a=(alpha+headOffset)*RAD,b=beta*RAD,g=gamma*RAD,o=screenAngle()*RAD;
+  const cA=Math.cos(a),sA=Math.sin(a),cB=Math.cos(b),sB=Math.sin(b),cG=Math.cos(g),sG=Math.sin(g);
+  const R11=cA*cG-sA*sB*sG, R12=-cB*sA, R13=cA*sG+cG*sA*sB;
+  const R21=cG*sA+cA*sB*sG, R22=cA*cB,  R23=sA*sG-cA*cG*sB;
+  const R31=-cB*sG,         R32=sB,     R33=cB*cG;
+  const dR=[R11,R21,R31], dU=[R12,R22,R32];
+  const co=Math.cos(o),so=Math.sin(o);
+  return {
+    right:[dR[0]*co-dU[0]*so, dR[1]*co-dU[1]*so, dR[2]*co-dU[2]*so],
+    up:   [dR[0]*so+dU[0]*co, dR[1]*so+dU[1]*co, dR[2]*so+dU[2]*co],
+    fwd:  [-R13,-R23,-R33]
+  };
+}
+const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const vec=(az,alt)=>[Math.cos(alt*RAD)*Math.sin(az*RAD),Math.cos(alt*RAD)*Math.cos(az*RAD),Math.sin(alt*RAD)];
+
+/* ============ rendu ============ */
+const cv=$("sky"),ctx=cv.getContext("2d"),video=$("cam");
+let cW=0,cH=0,camOn=false;
+function resize(){
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  cW=cv.clientWidth;cH=cv.clientHeight;
+  cv.width=Math.round(cW*dpr);cv.height=Math.round(cH*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+addEventListener("resize",resize);
+function focal(){
+  let w=cW;
+  if(camOn&&video.videoWidth){
+    const s=Math.max(cW/video.videoWidth,cH/video.videoHeight);
+    w=video.videoWidth*s;
+  }
+  return (w/2)/Math.tan(fovH*RAD/2);
+}
+function project(B,f,az,alt){
+  const s=vec(az,alt),z=dot(s,B.fwd);
+  if(z<=0.02)return null;
+  return {x:cW/2+f*dot(s,B.right)/z, y:cH/2-f*dot(s,B.up)/z, z};
+}
+function fmt(n,d=1){return n.toFixed(d);}
+function hhmmss(d){return d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"});}
+function hhmm(d){return d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});}
+const CARD=[[0,"N"],[45,"NE"],[90,"E"],[135,"SE"],[180,"S"],[225,"SO"],[270,"O"],[315,"NO"]];
+function cardinal(az){
+  const n=["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSO","SO","OSO","O","ONO","NO","NNO"];
+  return n[Math.round(az/22.5)%16];
+}
+
+let track=null;
+function buildTrack(){
+  const start=new Date(Math.min(Date.now(),EV.c1.getTime()));
+  const set=sunsetAfter(new Date(Date.now()-3600e3),LAT,LON)||EV.c4;
+  const pts=[];
+  for(let t=start.getTime();t<=set.getTime()+60000;t+=120000){
+    const p=sunPos(new Date(t),LAT,LON);
+    if(p.alt>-1.2)pts.push({t,az:p.az,alt:p.alt});
+  }
+  track={pts,set};
+}
+
+function draw(){
+  ctx.clearRect(0,0,cW,cH);
+  const now=new Date(), sun=sunPos(now,LAT,LON), B=basis(), f=focal();
+  const inTot=now>=EV.c2&&now<=EV.c3;
+
+  $("rAz").textContent=fmt(sun.az)+"° "+cardinal(sun.az);
+  $("rAlt").textContent=fmt(sun.alt)+"°";
+
+  if(!B){requestAnimationFrame(draw);return;}
+
+  const aimAz=(Math.atan2(B.fwd[0],B.fwd[1])*DEG+360)%360;
+  const aimAlt=Math.asin(Math.max(-1,Math.min(1,B.fwd[2])))*DEG;
+  $("rAim").textContent=fmt(aimAz,0)+"° / "+fmt(aimAlt,0)+"°";
+
+  /* --- ligne d'horizon + graduations --- */
+  ctx.lineWidth=1;ctx.strokeStyle="rgba(150,180,225,.30)";ctx.beginPath();
+  let started=false;
+  for(let d=-100;d<=100;d+=2){
+    const p=project(B,f,aimAz+d,0);
+    if(!p||p.x<-cW||p.x>2*cW){started=false;continue;}
+    if(!started){ctx.moveTo(p.x,p.y);started=true;}else ctx.lineTo(p.x,p.y);
+  }
+  ctx.stroke();
+  ctx.font="600 10px "+getComputedStyle(document.body).fontFamily;
+  for(const[a,l]of CARD){
+    const p=project(B,f,a,0);
+    if(p&&p.x>-40&&p.x<cW+40){
+      ctx.strokeStyle="rgba(150,180,225,.5)";ctx.beginPath();
+      ctx.moveTo(p.x,p.y-9);ctx.lineTo(p.x,p.y+9);ctx.stroke();
+      ctx.fillStyle="#9fb0c8";ctx.textAlign="center";ctx.fillText(l,p.x,p.y+22);
+    }
+  }
+
+  /* --- trajectoire du Soleil --- */
+  if(track){
+    ctx.lineWidth=2;ctx.strokeStyle="rgba(255,174,43,.42)";ctx.beginPath();started=false;
+    for(const q of track.pts){
+      const p=project(B,f,q.az,q.alt);
+      if(!p){started=false;continue;}
+      if(!started){ctx.moveTo(p.x,p.y);started=true;}else ctx.lineTo(p.x,p.y);
+    }
+    ctx.stroke();
+    /* graduations horaires */
+    ctx.font="600 9px "+getComputedStyle(document.body).fontFamily;
+    for(const q of track.pts){
+      const d=new Date(q.t);
+      if(d.getMinutes()%15!==0)continue;
+      const p=project(B,f,q.az,q.alt);if(!p)continue;
+      ctx.fillStyle="rgba(255,174,43,.75)";
+      ctx.beginPath();ctx.arc(p.x,p.y,2.5,0,7);ctx.fill();
+      ctx.textAlign="left";ctx.fillStyle="rgba(255,200,120,.8)";
+      ctx.fillText(hhmm(d),p.x+7,p.y+3);
+    }
+    /* coucher */
+    const ps=project(B,f,sunPos(track.set,LAT,LON).az,0);
+    if(ps){ctx.fillStyle="rgba(160,180,210,.9)";ctx.textAlign="center";
+      ctx.font="600 9px "+getComputedStyle(document.body).fontFamily;
+      ctx.fillText("COUCHER "+hhmm(track.set),ps.x,ps.y-14);}
+  }
+
+  /* --- marqueur de totalité --- */
+  const tot=sunPos(EV.c2,LAT,LON);
+  const pt=project(B,f,tot.az,tot.alt);
+  if(pt){
+    ctx.save();ctx.translate(pt.x,pt.y);ctx.rotate(Math.PI/4);
+    ctx.strokeStyle="#a77bff";ctx.lineWidth=2;ctx.strokeRect(-11,-11,22,22);ctx.restore();
+    ctx.fillStyle="#c4a4ff";ctx.textAlign="center";
+    ctx.font="700 10px "+getComputedStyle(document.body).fontFamily;
+    ctx.fillText("TOTALITÉ "+hhmm(EV.c2),pt.x,pt.y+30);
+  }
+
+  /* --- le Soleil --- */
+  const ps=project(B,f,sun.az,sun.alt);
+  const g=$("guide");
+  if(ps&&ps.x>0&&ps.x<cW&&ps.y>0&&ps.y<cH){
+    const col=inTot?"#a77bff":"#ffae2b";
+    ctx.strokeStyle=col;ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(ps.x,ps.y,16,0,7);ctx.stroke();
+    ctx.globalAlpha=.35;ctx.beginPath();ctx.arc(ps.x,ps.y,30,0,7);ctx.stroke();ctx.globalAlpha=1;
+    ctx.beginPath();
+    ctx.moveTo(ps.x-26,ps.y);ctx.lineTo(ps.x-20,ps.y);ctx.moveTo(ps.x+20,ps.y);ctx.lineTo(ps.x+26,ps.y);
+    ctx.moveTo(ps.x,ps.y-26);ctx.lineTo(ps.x,ps.y-20);ctx.moveTo(ps.x,ps.y+20);ctx.lineTo(ps.x,ps.y+26);
+    ctx.stroke();
+    g.style.opacity=".35";g.innerHTML="Soleil dans le viseur";
+  }else{
+    let d=((sun.az-aimAz+540)%360)-180, dv=sun.alt-aimAlt;
+    const hor=Math.abs(d)<1?"":(d>0?"tourne à droite <b>"+fmt(Math.abs(d),0)+"°</b>":"tourne à gauche <b>"+fmt(Math.abs(d),0)+"°</b>");
+    const ver=Math.abs(dv)<2?"":(dv>0?" · monte <b>"+fmt(Math.abs(dv),0)+"°</b>":" · descends <b>"+fmt(Math.abs(dv),0)+"°</b>");
+    g.style.opacity="1";g.innerHTML=(hor+ver)||"Soleil droit devant";
+    /* flèche vers le bord */
+    const ang=Math.atan2(dv,-d);
+    const r=Math.min(cW,cH)*0.30, x=cW/2+Math.cos(ang+Math.PI)*r*-1, y=cH/2-Math.sin(ang)*r;
+    ctx.save();ctx.translate(x,y);ctx.rotate(-ang+Math.PI/2);
+    ctx.fillStyle="#ffae2b";ctx.beginPath();
+    ctx.moveTo(0,-14);ctx.lineTo(9,8);ctx.lineTo(0,3);ctx.lineTo(-9,8);ctx.closePath();ctx.fill();
+    ctx.restore();
+  }
+  requestAnimationFrame(draw);
+}
+
+/* ============ compte à rebours ============ */
+function tick(){
+  const now=Date.now(),cd=$("cd"),ph=$("phase");
+  let d,label,cls="";
+  if(now<EV.c2.getTime()){d=EV.c2-now;label="phase partielle en cours";
+    if(now<EV.c1.getTime())label="avant le premier contact";
+    if(d<600000)cls="near";}
+  else if(now<EV.c3.getTime()){d=EV.c3-now;label="TOTALITÉ — retirez les lunettes";cls="now";}
+  else {d=EV.c4-now;label=d>0?"phase partielle finale":"éclipse terminée";}
+  const s=Math.max(0,Math.floor(d/1000));
+  cd.textContent=(now>=EV.c2.getTime()&&now<EV.c3.getTime()?"":"T−")+
+    String(Math.floor(s/3600)).padStart(2,"0")+":"+
+    String(Math.floor(s/60)%60).padStart(2,"0")+":"+String(s%60).padStart(2,"0");
+  cd.className="num "+cls;ph.textContent=label;
+}
+
+/* ============ tableau de données ============ */
+function refresh(){
+  buildTrack();
+  const t=sunPos(EV.c2,LAT,LON);
+  $("tC1").textContent=hhmmss(EV.c1);$("tC2").textContent=hhmmss(EV.c2);
+  $("tMax").textContent=hhmmss(EV.mx);$("tC3").textContent=hhmmss(EV.c3);
+  $("tDur").textContent=Math.round((EV.c3-EV.c2)/1000)+" s";
+  $("tSet").textContent=track.set?hhmmss(track.set):"—";
+  $("pAz").textContent=fmt(t.az)+"°";
+  $("pAlt").textContent=fmt(t.alt)+"°";
+  $("pPos").textContent=cardinal(t.az)+", très bas";
+  $("pLat").textContent=fmt(LAT,4)+"°";$("pLon").textContent=fmt(LON,4)+"°";
+  $("pSrc").textContent=SRC;
+  $("fA").textContent=fmt(t.az,0)+"°";$("fH").textContent=fmt(t.alt,1)+"°";
+  $("fT").textContent=hhmm(EV.c2);
+}
+
+/* ============ démarrage ============ */
+async function startCam(){
+  const st=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},
+    width:{ideal:1920},height:{ideal:1080}},audio:false});
+  video.srcObject=st;video.classList.add("on");camOn=true;
+  await video.play().catch(()=>{});
+}
+async function startSensors(){
+  if(typeof DeviceOrientationEvent!=="undefined"&&typeof DeviceOrientationEvent.requestPermission==="function"){
+    const r=await DeviceOrientationEvent.requestPermission();
+    if(r!=="granted")throw new Error("Boussole refusée");
+  }
+  addEventListener("deviceorientationabsolute",e=>onOrient(e,true),true);
+  addEventListener("deviceorientation",e=>onOrient(e,false),true);
+}
+function diagnose(extra){
+  const framed=window.self!==window.top;
+  let camPolicy="inconnu";
+  try{ if(document.featurePolicy) camPolicy=document.featurePolicy.allowsFeature("camera")?"autorisée":"BLOQUÉE par la page hôte"; }catch(e){}
+  const L=[
+    ["Page dans une iframe", framed?"OUI — c'est le blocage habituel":"non"],
+    ["Contexte sécurisé (HTTPS)", window.isSecureContext?"oui":"NON — requis pour la caméra"],
+    ["API caméra présente", navigator.mediaDevices?.getUserMedia?"oui":"non"],
+    ["Autorisation caméra héritée", camPolicy],
+    ["Capteur d'orientation", alpha===null?"aucune donnée reçue":"actif ("+Math.round(alpha)+"°)"],
+    ["Cap absolu (nord vrai)", hasAbs?"oui":"non — cap relatif seulement"]
+  ];
+  return (extra?"<b>"+extra+"</b><br><br>":"")+
+    L.map(r=>"· "+r[0]+" : "+r[1]).join("<br>")+
+    "<br><br>Si « iframe » vaut OUI : publiez cet artefact (bouton Partager) et ouvrez l'URL claude.site directement dans Safari ou Chrome. Les autorisations seront alors proposées.";
+}
+let forced=false;
+async function begin(useCam){
+  const err=$("err");err.style.display="none";
+  let msg=null;
+  try{ await startSensors(); }catch(e){ msg="Boussole refusée ou bloquée : "+e.message; }
+  if(useCam){
+    try{ await startCam(); }catch(e){ msg="Caméra indisponible ("+e.name+")."; }
+  }
+  await new Promise(r=>setTimeout(r,1200));           // laisse arriver un premier événement
+  if(alpha===null && !msg) msg="Aucune donnée d'orientation reçue.";
+  if(msg && !forced){
+    forced=true;err.style.display="block";err.innerHTML=diagnose(msg);
+    $("go").textContent="Continuer quand même";$("skip").textContent="Continuer sans caméra";
+    return;
+  }
+  try{ if("wakeLock" in navigator) await navigator.wakeLock.request("screen"); }catch(e){}
+  $("start").style.display="none";
+  resize();refresh();requestAnimationFrame(draw);
+}
+$("go").onclick=()=>begin(true);
+$("skip").onclick=()=>begin(false);
+$("btnPanel").onclick=()=>$("panel").classList.add("open");
+$("btnClose").onclick=()=>$("panel").classList.remove("open");
+$("btnCam").onclick=async()=>{
+  if(camOn){ (video.srcObject?.getTracks()||[]).forEach(t=>t.stop());
+    video.srcObject=null;video.classList.remove("on");camOn=false; }
+  else { try{ await startCam(); }catch(e){} }
+};
+$("sFov").oninput=e=>{fovH=+e.target.value;$("oFov").value=fovH+"°";};
+$("sOff").oninput=e=>{headOffset=+e.target.value;$("oOff").value=e.target.value+"°";};
+$("btnGeo").onclick=()=>{
+  navigator.geolocation.getCurrentPosition(p=>{
+    LAT=p.coords.latitude;LON=p.coords.longitude;SRC="GPS de l'appareil";refresh();
+  },e=>{$("pSrc").textContent="GPS refusé — position par défaut";},{enableHighAccuracy:true,timeout:10000});
+};
+
+resize();refresh();tick();setInterval(tick,250);
+navigator.geolocation&&navigator.geolocation.getCurrentPosition(p=>{
+  LAT=p.coords.latitude;LON=p.coords.longitude;SRC="GPS de l'appareil";refresh();
+},()=>{},{enableHighAccuracy:true,timeout:8000});
+</script>
+</body>
+</html>
